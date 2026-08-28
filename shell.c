@@ -42,23 +42,23 @@ int main(int argc, char *argv[]) {
     strcpy(logfile, workdir);
     strcat(logfile, "/rash.log");
 
-    
+    char buffer[512];
+
+    if (argc < 2) {
+        fprintf(stderr, "USAGE: rash <command>\n");
+        return 1;
+    }
+
+
     FILE *f = fopen(configfile, "r");
     FILE *log = fopen(logfile, "a");
-
-    char buffer[512];
 
     if (f == NULL) {
         fprintf(stderr, "rash.conf not found, please create it\n");
         perror("rash");
+        fclose(log);
         return 1;
     } 
-
-    if (argc < 2) {
-        fprintf(stderr, "USAGE: rash <command>\n");
-        exit(1);
-    }
-
 
     bool found = false;    
     while(fgets(buffer, 512, f) != NULL) {
@@ -71,7 +71,9 @@ int main(int argc, char *argv[]) {
     if(!found){
         fprintf(stderr, "This command is not allowed: %s\n", argv[1]);
         write_log(log, "tried to run an unknown command: %s", argv[1]);
-        exit(1);
+        fclose(f);
+        fclose(log);
+        return 1;
     }
     
     fclose(f);
