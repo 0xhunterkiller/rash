@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
+#include <stdbool.h>
 
 void write_log(FILE *log, char *msg, ...){
     if (log == NULL) return;
@@ -57,14 +58,20 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "USAGE: rash <command>\n");
         exit(1);
     }
-    
+
+
+    bool found = false;    
     while(fgets(buffer, 512, f) != NULL) {
         buffer[strcspn(buffer, "\n")] = '\0';
         if (strcmp(buffer, argv[1]) == 0) {
-            fprintf(stderr, "This command has been blacklisted: %s\n", buffer);
-            write_log(log, "tried to run a blacklisted command: %s", buffer);
-            exit(1);
+            found = true;
+            break;        
         }
+    }
+    if(!found){
+        fprintf(stderr, "This command is not allowed: %s\n", argv[1]);
+        write_log(log, "tried to run an unknown command: %s", argv[1]);
+        exit(1);
     }
     
     fclose(f);
