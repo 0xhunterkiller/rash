@@ -18,12 +18,6 @@ Ordered as a staircase: small rungs first, each teaching a primitive the big run
   before exec.
 - **Teaches:** what a child process inherits — the exact question isolation answers.
 
-### 2. Drop privileges before exec  — SMALL–MEDIUM  ← next wall
-- **Hole (#3):** the child runs as *you* — your UID, filesystem, network, permissions.
-  A whitelisted `curl` exfiltrates; a whitelisted anything acts with your full power.
-- **Move:** `setgid`/`setuid` the child down to an unprivileged user before `exec`.
-- **Teaches:** how a process changes its own identity — the primitive namespaces build on.
-
 ### 3. Resource limits + timeout  — SMALL
 - **Hole (#5):** no limits. A permitted interpreter can fork-bomb or spin CPU/memory;
   the parent `wait`s forever.
