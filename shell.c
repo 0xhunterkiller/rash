@@ -159,8 +159,8 @@ void free_config(conf rash_config) {
     }
 }
 
-// Drop Priviledges
-int drop_priviledges(const char *sysuser) {
+// Check User
+int check_user(const char *sysuser) {
     if (sysuser == NULL) {
         fprintf(stderr, "please configure a user\n");        
         exit(1);
@@ -175,11 +175,11 @@ int drop_priviledges(const char *sysuser) {
     gid_t gid = pw->pw_gid;
 
     if (uid < 1000 || gid < 1000) {
-        fprintf(stderr, "cannot escalate priviledge: uid: %d, gid: %d\n", uid, gid);        
+        fprintf(stderr, "cannot use this user (priviledged user): name: %s, uid: %d, gid: %d\n", sysuser, uid, gid);        
         exit(1);
     }
-    if (setgid(gid) < 0 || setuid(uid) < 0) {
-        fprintf(stderr, "cannot switch into different user or unable to drop priviledges\n");        
+    if (getuid() != uid || getgid() != gid) {
+        fprintf(stderr, "you can only run rash as the user its anchored to [%s]\n", sysuser);        
         exit(1);
     }
     return EXIT_SUCCESS;
@@ -209,7 +209,7 @@ int main(int argc, char *argv[]) {
         goto end;
     }
 
-    drop_priviledges(rash_config.sysuser);
+    check_user(rash_config.sysuser);
     
     // Logging Init
     char logfile[512];
