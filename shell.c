@@ -8,8 +8,11 @@
 #include <time.h>
 #include <stdbool.h>
 #include <sys/types.h>
+#include <stdint.h>
 #include <tomlc17.h>
+#include <pwd.h>
 
+// Logging
 void write_log(FILE *log, char *msg, ...){
     if (log == NULL) return;
     
@@ -27,6 +30,7 @@ void write_log(FILE *log, char *msg, ...){
     fflush(log);
 }
 
+// Configuration
 typedef struct Configuration {
     bool parse_success;
     char parser_feedback[200];
@@ -34,14 +38,22 @@ typedef struct Configuration {
     int wl_size;
     char **wl;
 
-    int env_count; // list of env vars specified excluding PATH and NULL
-    char **allowed_env; // list of valid env vars + constructed PATH + NULL
+    int env_count;
+    char **env_names;
+    char **env_values;
+
+    char *path;
+
+    char *sysuser;
 } conf;
 
-conf parse_config(FILE *fp) {
+conf parse_config(char *configfilepath) {
     conf rash_config;
-    toml_result_t result = toml_parse_file(fp);
 
+    FILE *fp = fopen(configfilepath, "r");
+    toml_result_t result = toml_parse_file(fp);
+    if (fp != NULL) fclose(fp);
+    
     rash_config.parse_success = true;
     strcpy(rash_config.parser_feedback, "");
 
@@ -51,12 +63,17 @@ conf parse_config(FILE *fp) {
         return rash_config;
     }
 
+    // Get SysUser
+    toml_datum_t config_sysuser = toml_get(result.toptab, "sysuser");
+    if(config_sysuser.type == TOML_STRING) {
+        rash_config.sysuser = malloc(sizeof(char) * 256);
+        strcpy(rash_config.sysuser, config_sysuser.u.s);
+    } else {
+        rash_config.sysuser = NULL;
+    }
+
     // Get Whitelist
     toml_datum_t whitelist = toml_get(result.toptab, "whitelist");
-    if(whitelist.type == TOML_UNKNOWN) {
-        rash_config.wl = NULL;
-        rash_config.wl_size = 0;
-    }
 
     if(whitelist.type == TOML_ARRAY) {
         rash_config.wl = malloc(whitelist.u.arr.size * sizeof(char *));
@@ -68,44 +85,63 @@ conf parse_config(FILE *fp) {
                 strcpy(rash_config.wl[i], command.u.s);
             }
         }
+    } else {
+        rash_config.wl = NULL;
+        rash_config.wl_size = 0;
     }
 
-    // Set PATH Variable
-    char *pathenv = "PATH=/usr/local/bin:/usr/bin";
-    
     // Get Allowed Env
-    int envvarlen = 0;
     toml_datum_t env_specs = toml_get(result.toptab, "env");
-
+    
     if(env_specs.type == TOML_ARRAY) {
-        rash_config.env_count = 0;
-        char **valid_envvars = malloc((env_specs.u.arr.size+2) * sizeof(char *));
+        int ec = 0;
+        char **env_names = malloc((env_specs.u.arr.size) * sizeof(char *));
+        char **env_values = malloc((env_specs.u.arr.size) * sizeof(char *));
         for(int i=0;i<env_specs.u.arr.size;i++){
             toml_datum_t envvarname = env_specs.u.arr.elem[i];
             if(envvarname.type == TOML_STRING) {
                 char *tmp = getenv(envvarname.u.s);
                 if (tmp == NULL || strcmp(envvarname.u.s, "PATH") == 0) continue;
-                envvarlen = strlen(tmp)+strlen(envvarname.u.s)+2; // accommodate \0 and the =
-                valid_envvars[rash_config.env_count] = malloc(envvarlen * sizeof(char));
-                snprintf(valid_envvars[rash_config.env_count], envvarlen, "%s=%s", envvarname.u.s, tmp);
-                rash_config.env_count += 1;
+                env_names[ec] = malloc((strlen(envvarname.u.s)+1) * sizeof(char));
+                env_values[ec] = malloc((strlen(tmp)+1) * sizeof(char));
+                strcpy(env_names[ec], envvarname.u.s);
+                strcpy(env_values[ec], tmp);
+                ec++;
             }
         }
-        valid_envvars[rash_config.env_count] = pathenv;
-        valid_envvars[rash_config.env_count+1] = NULL;
-        rash_config.allowed_env = valid_envvars;
+        rash_config.env_count = ec;
+        rash_config.env_names = env_names;
+        rash_config.env_values = env_values;
     } else {
-        rash_config.allowed_env = malloc(sizeof(char *) * 2);
-        rash_config.allowed_env[0] = pathenv;
-        rash_config.allowed_env[1] = NULL;
         rash_config.env_count = 0;
+        rash_config.env_names = NULL;
+        rash_config.env_values = NULL;
     }
 
     toml_free(result);
     return rash_config;
 }
 
+void setenvforchild(int env_count, char **env_names, char **env_values){
+    if(env_names == NULL) return;
+    if(env_values == NULL) return;
+    if(env_count <= 0) return;
+
+    for(int i=0;i<env_count;i++) {
+        if (env_names[i] == NULL || env_values[i] == NULL) continue;
+        setenv(env_names[i], env_values[i], 1);
+    }
+}
+
+void setpathforchild(char *path){
+    setenv("PATH", path, 1);
+}
+
 void free_config(conf rash_config) {
+    if(rash_config.sysuser != NULL) {
+        free(rash_config.sysuser);
+    } 
+
     if (rash_config.wl_size > 0) {
         for(int i=0;i<rash_config.wl_size;i++){
             free(rash_config.wl[i]);
@@ -115,78 +151,79 @@ void free_config(conf rash_config) {
 
     if (rash_config.env_count > 0){
         for(int i = 0; i < rash_config.env_count; i++) {
-            free(rash_config.allowed_env[i]);
+            free(rash_config.env_names[i]);
+            free(rash_config.env_values[i]);
         }
+        free(rash_config.env_names);
+        free(rash_config.env_values);
     }
-    free(rash_config.allowed_env);
 }
 
-void cleanup(FILE *f, FILE *log, conf rash_config){
-    if (f != NULL) fclose(f);
-    if (log != NULL) fclose(log);
-    free_config(rash_config);
+// Drop Priviledges
+int drop_priviledges(const char *sysuser) {
+    if (sysuser == NULL) {
+        fprintf(stderr, "please configure a user\n");        
+        exit(1);
+    }
+
+    struct passwd *pw = getpwnam(sysuser);
+    if(pw == NULL) {
+        fprintf(stderr, "no such user exists: %s\n", sysuser);        
+        exit(1);
+    }
+    uid_t uid = pw->pw_uid;
+    gid_t gid = pw->pw_gid;
+
+    if (uid < 1000 || gid < 1000) {
+        fprintf(stderr, "cannot escalate priviledge: uid: %d, gid: %d\n", uid, gid);        
+        exit(1);
+    }
+    if (setgid(gid) < 0 || setuid(uid) < 0) {
+        fprintf(stderr, "cannot switch into different user or unable to drop priviledges\n");        
+        exit(1);
+    }
+    return EXIT_SUCCESS;
 }
 
 int main(int argc, char *argv[]) {
-
-    // check access and drop if required
-    // this prevents accessing resoruces with  
-    // sudo or sudo su <higher priviledge user>    
-    char *sudo_uid_str = getenv("SUDO_UID");
-    char *sudo_gid_str = getenv("SUDO_GID");
-    if (sudo_gid_str != NULL && setgid((gid_t)atoi(sudo_gid_str)) < 0) {
-        fprintf(stderr, "cannot sudo into higher priviledge, unable to drop priviledges\n");        
-        goto exit_failed;
-    }
-    if (sudo_uid_str != NULL && setuid((uid_t)atoi(sudo_uid_str)) < 0) {
-        fprintf(stderr, "cannot sudo into higher priviledge, unable to drop priviledges\n");        
-        goto exit_failed;
-    } 
     
-    char *home = getenv("HOME");
-    if(home == NULL) goto exit_failed;
-
+    int retval = EXIT_FAILURE;
+    
+    if (argc < 2) {
+        fprintf(stderr, "USAGE: rash <command>\n");
+        goto end;
+    }
+    
+    // Establish Working Directory
     char workdir[512];
-    strcpy(workdir, home);
-    strcat(workdir, "/.local/state/rash");   
-
+    strcpy(workdir, "/etc/rash");
+    
+    // Create and Parse Config
     char configfile[512];
     strcpy(configfile, workdir);
     strcat(configfile, "/rash.toml");
     
-    char logfile[512];
-    strcpy(logfile, workdir);
-    strcat(logfile, "/rash.log");
-
-    char buffer[512];    
-    
-    if (argc < 2) {
-        fprintf(stderr, "USAGE: rash <command>\n");
-        goto exit_failed;
-    }    
-    
-    FILE *f = fopen(configfile, "r");
-    FILE *log = fopen(logfile, "a");
-    
-    if (log == NULL) {
-        fprintf(stderr, "config path doesn't exist\n");
-        perror("rash");
-        goto exit_failed;
-    }
-
-    if (f == NULL) {
-        fprintf(stderr, "rash.toml not found, please create it\n");
-        perror("rash");
-        goto exit_failed;
-    }
-
-    conf rash_config = parse_config(f);
-    
+    conf rash_config = parse_config(configfile);
     if (!rash_config.parse_success) {
         fprintf(stderr, "config failed to load: %s\n", rash_config.parser_feedback);
-        return EXIT_FAILURE;
+        goto end;
+    }
+
+    drop_priviledges(rash_config.sysuser);
+    
+    // Logging Init
+    char logfile[512];
+    strcpy(logfile, "/tmp/rash.log");
+    
+    FILE *log = fopen(logfile, "a");
+    if (log == NULL) {
+        fprintf(stderr, "coudn't open log file\n");
+        fprintf(stderr, "as uid=%d gid=%d\n", getuid(), getgid());
+        perror("rash");
+        goto leaveafter_rashconfig;
     }
     
+    // Check Whitelist
     bool found = false;
     if (rash_config.wl_size > 0) {
         for(int i=0;i<rash_config.wl_size;i++){
@@ -200,36 +237,40 @@ int main(int argc, char *argv[]) {
     if(!found){
         fprintf(stderr, "this command is not allowed: %s\n", argv[1]);
         write_log(log, "tried to run an unknown command: %s", argv[1]);
-        goto exit_failed;
+        goto leaveafter_log;
     }
 
     int exitcode = 0;
 
     pid_t pid = fork();
 
+    
     if (pid == 0) {
-        execve(argv[1], &argv[1], rash_config.allowed_env);
+        clearenv();
+        setenvforchild(rash_config.env_count, rash_config.env_names, rash_config.env_values);
+        setpathforchild("/usr/bin:/usr/local/bin");
+        execvp(argv[1], &argv[1]);
         perror("rash");
         exit(errno == ENOENT ? 127 : 126);
     } else if (pid > 0) {
         int status;
         wait(&status);    
-        exitcode = WEXITSTATUS(status);
-        write_log(log, "ran %s with exit status %d", argv[1], exitcode);
-        cleanup(f, log, rash_config);
-        exit(exitcode);
+        retval = WEXITSTATUS(status);
+        write_log(log, "ran %s with exit status %d", argv[1], retval);
+        goto leaveafter_all;
     } else {
-        free_config(rash_config);
-        cleanup(f, log, rash_config);
-        exit(1);
+        goto leaveafter_all;
     }
-    
-    
 
-    exit_failed:
-        cleanup(f, log, rash_config);    
-        return EXIT_FAILURE;
+    retval = EXIT_SUCCESS;
 
+    leaveafter_all:
+    leaveafter_log:
+        fclose(log);
     
-    return 0;
+    leaveafter_rashconfig:
+        free_config(rash_config);
+    
+    end:
+        return retval;
 }
