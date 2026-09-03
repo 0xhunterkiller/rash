@@ -5,7 +5,7 @@ COMPILE=$(COMPILER) $(OPTIONS)
 build:
 	@echo "building rash"
 	@mkdir -p target
-	@$(COMPILE) shell.c -ltomlc17
+	@$(COMPILE) src/*.c -ltomlc17 -o target/rash
 
 install: build
 	@echo "installing rash"
