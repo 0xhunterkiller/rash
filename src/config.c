@@ -1,10 +1,10 @@
+#include "config.h"
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <tomlc17.h>
 #include <string.h>
 #include <stdlib.h>
-
-#include "config.h"
 
 conf parse_config(char *configfilepath) {
     conf rash_config;

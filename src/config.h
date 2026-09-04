@@ -20,6 +20,7 @@ typedef struct Configuration {
 } conf;
 
 conf parse_config(char *configfilepath);
+
 void free_config(conf rash_config);
 
 #endif // RASH_CONFIG_H
