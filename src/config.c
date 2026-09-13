@@ -128,23 +128,17 @@ void free_config(conf rash_config)
         free(rash_config.sysuser);
     }
 
-    if (rash_config.wl_size > 0)
+    for (int i = 0; i < rash_config.wl_size; i++)
     {
-        for (int i = 0; i < rash_config.wl_size; i++)
-        {
-            free(rash_config.wl[i]);
-        }
-        free(rash_config.wl);
+        free(rash_config.wl[i]);
     }
-
-    if (rash_config.env_count > 0)
+    free(rash_config.wl);
+    
+    for (int i = 0; i < rash_config.env_count; i++)
     {
-        for (int i = 0; i < rash_config.env_count; i++)
-        {
-            free(rash_config.env_names[i]);
-            free(rash_config.env_values[i]);
-        }
-        free(rash_config.env_names);
-        free(rash_config.env_values);
+        free(rash_config.env_names[i]);
+        free(rash_config.env_values[i]);
     }
+    free(rash_config.env_names);
+    free(rash_config.env_values);
 }
