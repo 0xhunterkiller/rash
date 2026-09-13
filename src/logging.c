@@ -6,7 +6,8 @@
 #include <time.h>
 
 void write_log(FILE *log, char *msg, ...){
-    if (log == NULL) return;
+    if (log == NULL) 
+        return;
     
     time_t epoch = time(NULL);
 

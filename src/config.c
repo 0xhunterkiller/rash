@@ -6,95 +6,138 @@
 #include <string.h>
 #include <stdlib.h>
 
-conf parse_config(char *configfilepath) {
+void _rashconf_pop_sysuser(conf *config, toml_result_t result)
+{
+    toml_datum_t config_sysuser = toml_get(result.toptab, "sysuser");
+
+    if (config_sysuser.type == TOML_STRING)
+    {
+        config->sysuser = malloc(sizeof(char) * 256);
+        strcpy(config->sysuser, config_sysuser.u.s);
+    }
+    else
+    {
+        config->sysuser = NULL;
+    }
+}
+
+void _rashconf_pop_whitelist(conf *config, toml_result_t result)
+{
+    toml_datum_t whitelist = toml_get(result.toptab, "whitelist");
+
+    if (whitelist.type == TOML_ARRAY)
+    {
+        config->wl = malloc(whitelist.u.arr.size * sizeof(char *));
+        config->wl_size = whitelist.u.arr.size;
+
+        for (int i = 0; i < whitelist.u.arr.size; i++)
+        {
+            toml_datum_t command = whitelist.u.arr.elem[i];
+            if (command.type == TOML_STRING)
+            {
+                config->wl[i] = malloc((strlen(command.u.s) + 1) * sizeof(char));
+                strcpy(config->wl[i], command.u.s);
+            }
+        }
+    }
+    else
+    {
+        config->wl = NULL;
+        config->wl_size = 0;
+    }
+}
+
+void _rashconf_pop_allowedenv(conf *config, toml_result_t result)
+{
+    toml_datum_t env_specs = toml_get(result.toptab, "env");
+
+    if (env_specs.type == TOML_ARRAY)
+    {
+
+        char **env_names = malloc((env_specs.u.arr.size) * sizeof(char *));
+        char **env_values = malloc((env_specs.u.arr.size) * sizeof(char *));
+
+        int ec = 0;
+
+        for (int i = 0; i < env_specs.u.arr.size; i++)
+        {
+            toml_datum_t envvarname = env_specs.u.arr.elem[i];
+            if (envvarname.type == TOML_STRING)
+            {
+                char *tmp = getenv(envvarname.u.s);
+                if (tmp == NULL || strcmp(envvarname.u.s, "PATH") == 0)
+                    continue;
+                env_names[ec] = malloc((strlen(envvarname.u.s) + 1) * sizeof(char));
+                env_values[ec] = malloc((strlen(tmp) + 1) * sizeof(char));
+                strcpy(env_names[ec], envvarname.u.s);
+                strcpy(env_values[ec], tmp);
+                ec += 1;
+            }
+        }
+        config->env_count = ec;
+        config->env_names = env_names;
+        config->env_values = env_values;
+    }
+    else
+    {
+        config->env_count = 0;
+        config->env_names = NULL;
+        config->env_values = NULL;
+    }
+}
+
+conf parse_config(char *configfilepath)
+{
     conf rash_config;
 
     FILE *fp = fopen(configfilepath, "r");
     toml_result_t result = toml_parse_file(fp);
-    if (fp != NULL) fclose(fp);
-    
+    if (fp != NULL)
+        fclose(fp);
+
     rash_config.parse_success = true;
     strcpy(rash_config.parser_feedback, "");
 
-    if (!result.ok) {
+    if (!result.ok)
+    {
         rash_config.parse_success = result.ok;
         strcpy(rash_config.parser_feedback, result.errmsg);
         return rash_config;
     }
 
     // Get SysUser
-    toml_datum_t config_sysuser = toml_get(result.toptab, "sysuser");
-    if(config_sysuser.type == TOML_STRING) {
-        rash_config.sysuser = malloc(sizeof(char) * 256);
-        strcpy(rash_config.sysuser, config_sysuser.u.s);
-    } else {
-        rash_config.sysuser = NULL;
-    }
+    _rashconf_pop_sysuser(&rash_config, result);
 
     // Get Whitelist
-    toml_datum_t whitelist = toml_get(result.toptab, "whitelist");
-
-    if(whitelist.type == TOML_ARRAY) {
-        rash_config.wl = malloc(whitelist.u.arr.size * sizeof(char *));
-        rash_config.wl_size = whitelist.u.arr.size;
-        for(int i=0;i<whitelist.u.arr.size;i++) {
-            toml_datum_t command = whitelist.u.arr.elem[i];
-            if (command.type == TOML_STRING) {
-                rash_config.wl[i] = malloc((strlen(command.u.s)+1) * sizeof(char));
-                strcpy(rash_config.wl[i], command.u.s);
-            }
-        }
-    } else {
-        rash_config.wl = NULL;
-        rash_config.wl_size = 0;
-    }
+    _rashconf_pop_whitelist(&rash_config, result);
 
     // Get Allowed Env
-    toml_datum_t env_specs = toml_get(result.toptab, "env");
-    
-    if(env_specs.type == TOML_ARRAY) {
-        int ec = 0;
-        char **env_names = malloc((env_specs.u.arr.size) * sizeof(char *));
-        char **env_values = malloc((env_specs.u.arr.size) * sizeof(char *));
-        for(int i=0;i<env_specs.u.arr.size;i++){
-            toml_datum_t envvarname = env_specs.u.arr.elem[i];
-            if(envvarname.type == TOML_STRING) {
-                char *tmp = getenv(envvarname.u.s);
-                if (tmp == NULL || strcmp(envvarname.u.s, "PATH") == 0) continue;
-                env_names[ec] = malloc((strlen(envvarname.u.s)+1) * sizeof(char));
-                env_values[ec] = malloc((strlen(tmp)+1) * sizeof(char));
-                strcpy(env_names[ec], envvarname.u.s);
-                strcpy(env_values[ec], tmp);
-                ec++;
-            }
-        }
-        rash_config.env_count = ec;
-        rash_config.env_names = env_names;
-        rash_config.env_values = env_values;
-    } else {
-        rash_config.env_count = 0;
-        rash_config.env_names = NULL;
-        rash_config.env_values = NULL;
-    }
+    _rashconf_pop_allowedenv(&rash_config, result);
 
     toml_free(result);
     return rash_config;
 }
 
-void free_config(conf rash_config) {
-    if(rash_config.sysuser != NULL) {
+void free_config(conf rash_config)
+{
+    if (rash_config.sysuser != NULL)
+    {
         free(rash_config.sysuser);
-    } 
+    }
 
-    if (rash_config.wl_size > 0) {
-        for(int i=0;i<rash_config.wl_size;i++){
+    if (rash_config.wl_size > 0)
+    {
+        for (int i = 0; i < rash_config.wl_size; i++)
+        {
             free(rash_config.wl[i]);
         }
         free(rash_config.wl);
     }
 
-    if (rash_config.env_count > 0){
-        for(int i = 0; i < rash_config.env_count; i++) {
+    if (rash_config.env_count > 0)
+    {
+        for (int i = 0; i < rash_config.env_count; i++)
+        {
             free(rash_config.env_names[i]);
             free(rash_config.env_values[i]);
         }
