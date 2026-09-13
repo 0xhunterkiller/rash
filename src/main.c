@@ -104,8 +104,6 @@ int main(int argc, char *argv[]) {
         goto clear_all;
     }
 
-    retval = EXIT_SUCCESS;
-
     clear_all:
     clear_2:
         fclose(log);
