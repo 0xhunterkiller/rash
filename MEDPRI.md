@@ -5,20 +5,20 @@ Containment and robustness. The root cause behind the containment items: **rash 
 ---
 
 ## M1. Resolve the binary before exec (#6)
-**Where:** `src/main.c:67`.
+**Where:** `src/main.c:83`.
 
-Already done: the child `clearenv()`s and sets a fixed `PATH=/usr/bin:/usr/local/bin`, so `$PATH` is no longer caller-controlled. Still open: `execvp` resolves by search, so rash approves a name, not a file.
+Already done: the child clears `environ` and sets a fixed `PATH=/usr/bin:/usr/local/bin`, so `$PATH` is no longer caller-controlled. Still open: `execvp` resolves by search, so rash approves a name, not a file.
 
 **Fix:** resolve to an absolute path in the parent, check that path, and `execv` it, so the thing you decided to allow is the thing that runs.
 
 ## M2. Resource limits and timeout (#5)
-**Where:** `src/main.c:61-76`.
+**Where:** `src/main.c:77-102`.
 
 No limits: a permitted interpreter can fork-bomb or burn CPU and memory, and the parent waits forever.
 
 **Fix:** `setrlimit` in the child before exec (`RLIMIT_NPROC`, `RLIMIT_CPU`, `RLIMIT_AS`) and add a timeout on the wait.
 
-**Depends on:** HIGHPRI H3. A child killed on timeout is a signalled child, which rash currently logs as exit status 0.
+**Note:** H3 is fixed, so a child killed on timeout is already reported and logged as `128 + signal`, not as success.
 
 ## M3. Isolation via namespaces and seccomp (#1, #2) — BIG
 Unsolvable by filtering. **#1:** any interpreter on the list escapes entirely (`python -c`, `bash -c`, `find -exec`, `kubectl` plugins). **#2:** "safe" commands still do damage through arguments (`cat ~/.ssh/id_ed25519`, `cp`, `tee`). You gate the verb, never the object.
@@ -26,7 +26,7 @@ Unsolvable by filtering. **#1:** any interpreter on the list escapes entirely (`
 **Fix:** contain what the child can see and touch: PID, mount, and network namespaces plus a seccomp syscall filter. Do this after M1 and M2.
 
 ## M4. Silent fork failure
-**Where:** `src/main.c:79-82`.
+**Where:** `src/main.c:103-106`.
 
 When `fork()` fails, rash returns 1 with no message on stderr and no log entry. The caller sees what looks like an ordinary command failure, and the audit trail has a gap exactly when the system is under pressure, such as a fork bomb hitting limits.
 
@@ -47,8 +47,29 @@ The check compares `getuid()`/`getgid()`. That is correct today, since 07cdea6 b
 **Fix:** write down the privilege model now; if setuid returns, decide which IDs to compare and drop privileges explicitly before exec.
 
 ## M7. `conf.path` is never set
-**Where:** `src/config.h:17`; PATH hardcoded at `src/main.c:66`.
+**Where:** `src/config.h:17`; PATH hardcoded at `src/main.c:82`.
 
 The `path` field is never initialized or written, so it is a live uninitialized pointer waiting for someone to use it. Meanwhile the child's PATH is hardcoded and can't change without a rebuild.
 
 **Fix:** read `path` from `rash.toml` (absolute, root-owned directories only) and pass it to `setpathforchild`, or delete the field.
+
+## M8. Audit log still lives in `/tmp` (was H4)
+**Where:** `src/main.c:36`, `src/main.c:46-53`.
+
+`O_NOFOLLOW` now blocks symlink redirects, but the log is owned by the restricted user, who can edit or truncate it. With `fs.protected_regular=1`, another user pre-creating `/tmp/rash.log` makes `open` fail and rash refuses to run. Without `O_CLOEXEC`, children inherit a writable log handle.
+
+**Fix:** log under a root-owned directory and open with `O_APPEND | O_CLOEXEC`.
+
+## M9. Config integrity (#4) (was H7)
+**Where:** `src/config.c:95`.
+
+Not exploitable today: `hunterkiller` cannot write `/etc/rash/rash.toml` or `/etc/rash`. But the file is owned by nonexistent UID 644, likely a `chown`/`chmod` mix-up, so whoever later gets that UID controls the whitelist. rash never checks ownership before trusting the config.
+
+**Fix:** `sudo chown root:root` the file; refuse to load unless root-owned and not group/world-writable, via `fstat` on the opened fd.
+
+## M10. Env allowlist passes caller-controlled values (was H8)
+**Where:** `src/config.c:64-81`.
+
+The allowlist gates variable *names*, then copies their *values* from the caller's environment. Harmless today: rash grants no extra privilege and the config lists no loader variables. It becomes code execution inside whitelisted interpreters if someone adds `BASH_ENV`, `PYTHONPATH`, `PERL5LIB`, or `LD_*`.
+
+**Fix:** hard-reject loader and startup variables at parse time, or let the config set fixed values instead of inheriting them.
