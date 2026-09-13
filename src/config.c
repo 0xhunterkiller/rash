@@ -88,6 +88,20 @@ void _rashconf_pop_allowedenv(conf *config, toml_result_t result)
     }
 }
 
+void _rashconf_pop_path(conf *config, toml_result_t result)
+{
+    toml_datum_t path_spec = toml_get(result.toptab, "syspath");
+    if (path_spec.type == TOML_STRING)
+    {
+        config->path = malloc(sizeof(char) * (strlen(path_spec.u.s) + 1));
+        strcpy(config->path, path_spec.u.s);
+    }
+    else
+    {
+        config->path = NULL;
+    }
+}
+
 conf parse_config(char *configfilepath)
 {
     conf rash_config = {0};
@@ -117,6 +131,9 @@ conf parse_config(char *configfilepath)
     // Get Allowed Env
     _rashconf_pop_allowedenv(&rash_config, result);
 
+    // Get Path
+    _rashconf_pop_path(&rash_config, result);
+
     toml_free(result);
     return rash_config;
 }
@@ -126,6 +143,11 @@ void free_config(conf rash_config)
     if (rash_config.sysuser != NULL)
     {
         free(rash_config.sysuser);
+    }
+
+    if (rash_config.path != NULL)
+    {
+        free(rash_config.path);
     }
 
     for (int i = 0; i < rash_config.wl_size; i++)

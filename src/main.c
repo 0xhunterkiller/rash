@@ -41,6 +41,12 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "config failed to load: %s\n", rash_config.parser_feedback);
         goto clear_1;
     }
+
+    // check: verify config (path)
+    if (rash_config.path == NULL) {
+        fprintf(stderr, "path is not set\n");
+        goto clear_1;
+    }
     
     // log: open log file securely
     int fd = open(logfile, O_WRONLY | O_CREAT | O_NOFOLLOW, 0644);
@@ -78,7 +84,7 @@ int main(int argc, char *argv[]) {
     {
         environ = NULL;
         setenvforchild(rash_config.env_count, rash_config.env_names, rash_config.env_values);
-        setpathforchild("/usr/bin:/usr/local/bin");
+        setpathforchild(rash_config.path);
         execvp(argv[1], &argv[1]);
         perror("rash");
         exit(errno == ENOENT ? 127 : 126);
