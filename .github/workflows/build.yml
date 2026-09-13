@@ -1,0 +1,89 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # tomlc17 has no distro package; build a pinned release from source.
+  TOMLC17_REF: R260821
+  TOMLC17_SHA: e0e8868546b4611a86fcdb284819e60866a3480b
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build tomlc17 ${{ env.TOMLC17_REF }}
+        run: |
+          src="$RUNNER_TEMP/tomlc17-src"
+          git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$TOMLC17_REF" https://github.com/cktan/tomlc17 "$src"
+          actual="$(git -C "$src" rev-parse HEAD)"
+          if [ "$actual" != "$TOMLC17_SHA" ]; then
+            echo "::error::tomlc17 $TOMLC17_REF resolved to $actual, expected $TOMLC17_SHA"
+            exit 1
+          fi
+          make -C "$src" install prefix="$RUNNER_TEMP/tomlc17"
+          echo "CPATH=$RUNNER_TEMP/tomlc17/include" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$RUNNER_TEMP/tomlc17/lib" >> "$GITHUB_ENV"
+
+      - name: Build rash
+        run: make build
+
+      - name: Smoke test
+        run: |
+          out="$(./target/rash 2>&1 || true)"
+          echo "$out"
+          echo "$out" | grep -q "USAGE: rash"
+
+      - name: Package
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="$GITHUB_REF_NAME"
+          else
+            version="$(git rev-parse --short HEAD)"
+          fi
+          name="rash-${version}-linux-x86_64"
+          mkdir -p "dist/$name/THIRD_PARTY_LICENSES"
+          cp target/rash LICENSE "dist/$name/"
+          # libtomlc17.a is statically linked; MIT requires shipping its notice.
+          cp "$RUNNER_TEMP/tomlc17-src/LICENSE" "dist/$name/THIRD_PARTY_LICENSES/tomlc17"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          rm -rf "dist/$name"
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rash-linux-x86_64
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: rash-linux-x86_64
+          path: dist
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "rash $GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag

@@ -73,3 +73,24 @@ Not exploitable today: `hunterkiller` cannot write `/etc/rash/rash.toml` or `/et
 The allowlist gates variable *names*, then copies their *values* from the caller's environment. Harmless today: rash grants no extra privilege and the config lists no loader variables. It becomes code execution inside whitelisted interpreters if someone adds `BASH_ENV`, `PYTHONPATH`, `PERL5LIB`, or `LD_*`.
 
 **Fix:** hard-reject loader and startup variables at parse time, or let the config set fixed values instead of inheriting them.
+
+## M11. POSIX is only requested in `main.c`
+**Where:** `src/main.c:1`; `setenv` used at `src/security.c:23`, `src/security.c:29`.
+
+Only `main.c` defines `_POSIX_C_SOURCE 200809L`. `security.c` calls `setenv`, which is POSIX rather than ISO C, and builds only because gcc's default GNU mode exposes it. Under `gcc -std=c99 -pedantic` it fails with an implicit declaration of `setenv`. With the macro on every file, all four compile warning-free.
+
+**Fix:** add `-std=c99 -D_POSIX_C_SOURCE=200809L` to the Makefile `OPTIONS` and delete the `#define`.
+
+## M12. `environ = NULL` is not portable
+**Where:** `src/main.c:79`.
+
+Dropping `clearenv()` was right; POSIX rejected it. But a null `environ` isn't guaranteed either; the Linux man page only says it "will probably do". POSIX lets you point `environ` at a NULL-terminated array, and a null pointer is not one.
+
+**Fix:** use `static char *empty_env[] = { NULL }; environ = empty_env;`, or better, build an envp array and `execve` it alongside M1.
+
+## M13. Portability nits: `uid_t` format and reserved names
+**Where:** `src/main.c:49`, `src/main.c:56`, `src/security.c:51`; `src/config.c:9`, `src/config.c:24`, `src/config.c:52`.
+
+`uid_t`/`gid_t` are printed with `%d`, but POSIX does not say they are `int`. The `_rashconf_*` helpers start with an underscore at file scope, which ISO C reserves for the implementation.
+
+**Fix:** cast IDs to `(long)` and print with `%ld`; rename the helpers without the leading underscore and make them `static`.
