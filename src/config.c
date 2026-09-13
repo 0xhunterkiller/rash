@@ -36,7 +36,7 @@ void _rashconf_pop_whitelist(conf *config, toml_result_t result)
             if (command.type == TOML_STRING)
             {
                 config->wl[wlc] = malloc((strlen(command.u.s) + 1) * sizeof(char));
-                strcpy(config->wl[i], command.u.s);
+                strcpy(config->wl[wlc], command.u.s);
                 wlc+=1;
             }
         }
