@@ -1,11 +1,11 @@
 COMPILER=gcc
-OPTIONS=-o target/rash
+OPTIONS=-o target/rash -Wall -Wextra
 COMPILE=$(COMPILER) $(OPTIONS)
 
 build:
 	@echo "building rash"
 	@mkdir -p target
-	@$(COMPILE) src/*.c -ltomlc17 -o target/rash
+	@$(COMPILE) src/*.c -ltomlc17 $(OPTIONS)
 
 install: build
 	@echo "installing rash"
