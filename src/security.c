@@ -34,14 +34,14 @@ int check_user(const char *sysuser)
     if (sysuser == NULL)
     {
         fprintf(stderr, "please configure a user\n");
-        exit(1);
+        return -1;
     }
 
     struct passwd *pw = getpwnam(sysuser);
     if (pw == NULL)
     {
         fprintf(stderr, "no such user exists: %s\n", sysuser);
-        exit(1);
+        return -1;
     }
     uid_t uid = pw->pw_uid;
     gid_t gid = pw->pw_gid;
@@ -49,14 +49,14 @@ int check_user(const char *sysuser)
     if (uid < 1000 || gid < 1000)
     {
         fprintf(stderr, "cannot use this user (priviledged user): name: %s, uid: %d, gid: %d\n", sysuser, uid, gid);
-        exit(1);
+        return -1;
     }
     if (getuid() != uid || getgid() != gid)
     {
         fprintf(stderr, "you can only run rash as the user its anchored to [%s]\n", sysuser);
-        exit(1);
+        return -1;
     }
-    return EXIT_SUCCESS;
+    return 0;
 }
 
 int check_whitelist(conf *config, char *command)

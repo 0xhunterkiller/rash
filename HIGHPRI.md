@@ -53,9 +53,13 @@ Whoever writes `rash.toml` owns the machine: a whitelisted `tee` or `cp` can app
 
 **Fix:** chown it to root; refuse to load unless root-owned and not group/world-writable, checked with `fstat` on the already-opened fd, not the path.
 
+NOT AN ISSUE (H1 AND H2 resolved independantly)
+
 ## H8. Env allowlist passes caller-controlled values
 **Where:** `src/config.c:62-76`.
 
 The allowlist gates variable *names*, then copies their *values* straight from the caller's environment. A config listing `BASH_ENV`, `PYTHONPATH`, `PERL5LIB`, or `LD_*` hands the caller code execution inside any whitelisted interpreter.
 
 **Fix:** hard-reject loader and startup variables, or have the config set fixed values instead of inheriting them.
+
+NOT AN ISSUE

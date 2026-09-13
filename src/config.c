@@ -12,7 +12,7 @@ void _rashconf_pop_sysuser(conf *config, toml_result_t result)
 
     if (config_sysuser.type == TOML_STRING)
     {
-        config->sysuser = malloc(sizeof(char) * 256);
+        config->sysuser = malloc(sizeof(char) * (strlen(config_sysuser.u.s) + 1));
         strcpy(config->sysuser, config_sysuser.u.s);
     }
     else
@@ -28,17 +28,19 @@ void _rashconf_pop_whitelist(conf *config, toml_result_t result)
     if (whitelist.type == TOML_ARRAY)
     {
         config->wl = malloc(whitelist.u.arr.size * sizeof(char *));
-        config->wl_size = whitelist.u.arr.size;
-
+        
+        int wlc = 0;
         for (int i = 0; i < whitelist.u.arr.size; i++)
         {
             toml_datum_t command = whitelist.u.arr.elem[i];
             if (command.type == TOML_STRING)
             {
-                config->wl[i] = malloc((strlen(command.u.s) + 1) * sizeof(char));
+                config->wl[wlc] = malloc((strlen(command.u.s) + 1) * sizeof(char));
                 strcpy(config->wl[i], command.u.s);
+                wlc+=1;
             }
         }
+        config->wl_size = wlc;
     }
     else
     {
@@ -88,7 +90,7 @@ void _rashconf_pop_allowedenv(conf *config, toml_result_t result)
 
 conf parse_config(char *configfilepath)
 {
-    conf rash_config;
+    conf rash_config = {0};
 
     FILE *fp = fopen(configfilepath, "r");
     toml_result_t result = toml_parse_file(fp);
@@ -102,6 +104,7 @@ conf parse_config(char *configfilepath)
     {
         rash_config.parse_success = result.ok;
         strcpy(rash_config.parser_feedback, result.errmsg);
+        toml_free(result);
         return rash_config;
     }
 
