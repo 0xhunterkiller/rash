@@ -73,7 +73,6 @@ int main(int argc, char *argv[]) {
         goto clear_2;
     }
 
-    int exitcode = 0;
     pid_t pid = fork();
     if (pid == 0)
     {
