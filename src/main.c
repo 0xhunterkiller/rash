@@ -13,6 +13,7 @@
 
 // default stack size = 8MB
 #define CONTAINER_STACK_SIZE (1024 * 1024 * 8)
+#define RASH_EXIT_FAILURE 125
 
 extern char **environ;
 
@@ -38,7 +39,7 @@ int rashproc(void *arg)
 int main(int argc, char *argv[])
 {
 
-    int retval = EXIT_FAILURE;
+    int retval = RASH_EXIT_FAILURE;
     char workdir[512], configfile[512];
 
     if (argc < 2)

@@ -14,18 +14,6 @@
       "blocked_on": [
         "M2"
       ]
-    },
-    {
-      "id": "M5",
-      "title": "Exit codes conflate rash and the child",
-      "body": "**Where:** `src/main.c`, all failure paths.\n\nrash's own `EXIT_FAILURE` is indistinguishable from a child that legitimately exited 1, so callers cannot tell \"rash refused\" from \"the command failed\". Scripts and agents wrapping rash will misread denials as ordinary errors.\n\n**Fix:** reserve a range for rash's own failures, in the 126/127 style, and document the codes.",
-      "blocked_on": []
-    },
-    {
-      "id": "M10",
-      "title": "Env allowlist passes caller-controlled values (was H8)",
-      "body": "**Where:** `src/config.c:64-81`.\n\nThe allowlist gates variable *names*, then copies their *values* from the caller's environment. Harmless today: rash grants no extra privilege and the config lists no loader variables. It becomes code execution inside whitelisted interpreters if someone adds `BASH_ENV`, `PYTHONPATH`, `PERL5LIB`, or `LD_*`.\n\n**Fix:** hard-reject loader and startup variables at parse time, or let the config set fixed values instead of inheriting them.",
-      "blocked_on": []
     }
   ],
   "low": [
@@ -45,6 +33,18 @@
       "id": "N3",
       "title": "Verify config is root-owned & not group/world-writable at load (fstat the fd)",
       "body": "M9 was fixed operationally (chowned to root:root 644), but rash doesn't CHECK this at runtime — it trusts the file's ownership. The file was misowned as UID 644 once already, so drift happens; a runtime fstat makes the guarantee durable instead of relying on external state.",
+      "blocked_on": []
+    },
+    {
+      "id": "M10",
+      "title": "Env value passthrough (deferred — no reliable generic denylist)",
+      "body": "[Deferred] A denylist of dangerous vars (LD_*, BASH_ENV, PYTHONPATH, ...) is unbounded and interpreter-specific; the admin can't know the full set, so it can't be solved generically that way. If revisited, flip the direction: don't pass caller-controlled VALUES at all — let the config set fixed values, or allow only a small hardcoded safe-var list. Not currently exploitable (same-user, no loader vars configured).",
+      "blocked_on": []
+    },
+    {
+      "id": "N4",
+      "title": "Catch-all exit path uses EXIT_FAILURE (1), should be 125",
+      "body": "main.c:143 — the neither-exited-nor-signalled branch returns EXIT_FAILURE (1), which conflates with a child exiting 1. Practically unreachable (needs WUNTRACED/WCONTINUED, not set), so cosmetic. Use RASH_EXIT_FAILURE (125) for consistency: rash couldn't determine status = rash's own problem.",
       "blocked_on": []
     }
   ],
@@ -131,6 +131,12 @@
       "id": "M11",
       "title": "Feature macro centralized (-D_GNU_SOURCE in Makefile)",
       "body": "[Deprioritized — Linux/glibc target, not chasing POSIX] **Where:** `src/main.c:1` (`_GNU_SOURCE`); `setenv` at `src/security.c:23`, `src/security.c:29`.\n\n`main.c` defines `_GNU_SOURCE` (needed for `clone`), but `security.c` defines nothing and calls `setenv`, which isn't ISO C. Under `gcc -std=c99 -pedantic` it still fails with an implicit `setenv` declaration (confirmed). It only builds because gcc's default GNU mode exposes it.\n\n**Fix:** set the feature macro once in the Makefile `OPTIONS` (`-D_GNU_SOURCE`, since `clone` needs it) rather than per-file.",
+      "blocked_on": []
+    },
+    {
+      "id": "M5",
+      "title": "Exit codes conflate rash and the child",
+      "body": "**Where:** `src/main.c`, all failure paths.\n\nrash's own `EXIT_FAILURE` is indistinguishable from a child that legitimately exited 1, so callers cannot tell \"rash refused\" from \"the command failed\". Scripts and agents wrapping rash will misread denials as ordinary errors.\n\n**Fix:** reserve a range for rash's own failures, in the 126/127 style, and document the codes.",
       "blocked_on": []
     }
   ]
