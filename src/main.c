@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,23 +8,41 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <fcntl.h>
+#include <sched.h>
 
 #include "config.h"
 #include "security.h"
 #include "logging.h"
 
+// default stack size = 8MB
+#define CONTAINER_STACK_SIZE (1024 * 1024 * 8)
+
 extern char **environ;
 
-int main(int argc, char *argv[]) {
-    
+int rashproc(void *arg)
+{
+    conf *rash_config = (conf *)arg;
+
+    environ = NULL;
+    setenvforchild(rash_config->env_count, rash_config->env_names, rash_config->env_values);
+    setpathforchild(rash_config->path);
+    execvp(rash_config->command, rash_config->command_args);
+    perror("rash");
+    exit(errno == ENOENT ? 127 : 126);
+}
+
+int main(int argc, char *argv[])
+{
+
     int retval = EXIT_FAILURE;
     char workdir[512], configfile[512], logfile[512];
 
-    if (argc < 2) {
+    if (argc < 2)
+    {
         fprintf(stderr, "USAGE: rash <command>\n");
         goto clear_0;
     }
-    
+
     // set working directory
     strcpy(workdir, "/etc/rash");
 
@@ -37,85 +55,101 @@ int main(int argc, char *argv[]) {
 
     // parse the config file
     conf rash_config = parse_config(configfile);
-    if (!rash_config.parse_success) {
+    if (!rash_config.parse_success)
+    {
         fprintf(stderr, "config failed to load: %s\n", rash_config.parser_feedback);
         goto clear_1;
     }
 
     // check: verify config (path)
-    if (rash_config.path == NULL) {
+    if (rash_config.path == NULL)
+    {
         fprintf(stderr, "path is not set\n");
         goto clear_1;
     }
-    
+
     // log: open log file securely
     int fd = open(logfile, O_WRONLY | O_CREAT | O_NOFOLLOW, 0644);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         fprintf(stderr, "coudn't open log file\n");
         fprintf(stderr, "as uid=%d gid=%d\n", getuid(), getgid());
         perror("rash");
         goto clear_1;
     }
     FILE *log = fdopen(fd, "a");
-    if (log == NULL) {
+    if (log == NULL)
+    {
         fprintf(stderr, "coudn't open log file\n");
         fprintf(stderr, "as uid=%d gid=%d\n", getuid(), getgid());
         perror("rash");
         goto clear_1;
     }
-    
+
     // security: check if user === user named in config
-    if(check_user(rash_config.sysuser) < 0)
+    if (check_user(rash_config.sysuser) < 0)
     {
         write_log(log, "check user failed");
         goto clear_2;
     }
-    
+
     // security: check whitelist to see if the command is allowed
-    if(check_whitelist(&rash_config, argv[1]))
+    if (check_whitelist(&rash_config, argv[1]))
     {
         fprintf(stderr, "this command is not allowed: %s\n", argv[1]);
         write_log(log, "tried to run an unknown command: %s", argv[1]);
         goto clear_2;
     }
 
-    pid_t pid = fork();
-    if (pid == 0)
+    // clone and run the command
+    rash_config.command = argv[1];
+    rash_config.command_args = &argv[1];
+
+    char *c_stack = malloc(CONTAINER_STACK_SIZE);
+    int status;
+    if (c_stack == NULL)
+        goto clear_all;
+
+    pid_t childpid = clone(rashproc, c_stack + CONTAINER_STACK_SIZE, SIGCHLD, (void *)&rash_config);
+
+    if (childpid == -1)
     {
-        environ = NULL;
-        setenvforchild(rash_config.env_count, rash_config.env_names, rash_config.env_values);
-        setpathforchild(rash_config.path);
-        execvp(argv[1], &argv[1]);
         perror("rash");
-        exit(errno == ENOENT ? 127 : 126);
-    } 
-    else if (pid > 0)
+        goto clear_all;
+    }
+
+    // handle exit
+    if(waitpid(childpid, &status, 0) == -1)
     {
-        int status;
-        waitpid(pid, &status, 0);   
+        perror("rash");
+        fprintf(stderr, "waitpid failed\n");
+        goto clear_all;
+    }
 
-        if(WIFEXITED(status)) {
-            retval = WEXITSTATUS(status);
-        } else if (WIFSIGNALED(status)) {
-            retval = 128 + WTERMSIG(status);
-        } else {
-            retval = EXIT_FAILURE; // catch all
-        } 
-
-        write_log(log, "ran %s with exit status %d", argv[1], retval);
+    if (WIFEXITED(status))
+    {
+        retval = WEXITSTATUS(status);
+        goto clear_all;
+    }
+    else if (WIFSIGNALED(status))
+    {
+        retval = 128 + WTERMSIG(status);
         goto clear_all;
     }
     else
     {
+        retval = EXIT_FAILURE; // catch all
         goto clear_all;
     }
 
-    clear_all:
-    clear_2:
-        fclose(log);
-    clear_1:
-        free_config(rash_config);
-    
-    clear_0:
-        return retval;
+    write_log(log, "ran %s with exit status %d", argv[1], retval);
+
+clear_all:
+    free(c_stack);
+clear_2:
+    fclose(log);
+clear_1:
+    free_config(rash_config);
+clear_0:
+    return retval;
 }

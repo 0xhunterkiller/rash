@@ -7,6 +7,9 @@ typedef struct Configuration {
     bool parse_success;
     char parser_feedback[200];
 
+    char *command;
+    char **command_args;
+
     int wl_size;
     char **wl;
 
