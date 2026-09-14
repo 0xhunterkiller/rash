@@ -102,6 +102,20 @@ void _rashconf_pop_path(conf *config, toml_result_t result)
     }
 }
 
+void _rashconf_pop_logfilepath(conf *config, toml_result_t result)
+{
+    toml_datum_t path_spec = toml_get(result.toptab, "logfilepath");
+    if (path_spec.type == TOML_STRING)
+    {
+        config->logfilepath = malloc(sizeof(char) * (strlen(path_spec.u.s) + 1));
+        strcpy(config->logfilepath, path_spec.u.s);
+    }
+    else
+    {
+        config->logfilepath = NULL;
+    }
+}
+
 conf parse_config(char *configfilepath)
 {
     conf rash_config = {0};
@@ -134,6 +148,9 @@ conf parse_config(char *configfilepath)
     // Get Path
     _rashconf_pop_path(&rash_config, result);
 
+    // Get LogFilePath
+    _rashconf_pop_logfilepath(&rash_config, result);
+
     toml_free(result);
     return rash_config;
 }
@@ -149,6 +166,12 @@ void free_config(conf rash_config)
     {
         free(rash_config.path);
     }
+
+    if (rash_config.logfilepath != NULL)
+    {
+        free(rash_config.logfilepath);
+    }
+
 
     for (int i = 0; i < rash_config.wl_size; i++)
     {

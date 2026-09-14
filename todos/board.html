@@ -1,0 +1,71 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>rash board</title><style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f5f7;color:#172b4d;
+  font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:16px 20px;border-bottom:1px solid #dfe1e6}
+header h1{font-size:18px;margin:0}
+.board{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:20px;align-items:start}
+@media(max-width:820px){.board{grid-template-columns:1fr}}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;
+  display:flex;justify-content:space-between;color:#5e6c84}
+.card{background:#fff;border:1px solid #dfe1e6;border-left:4px solid #5e6c84;
+  border-radius:8px;padding:10px 12px;margin-bottom:10px;box-shadow:0 1px 0 rgba(9,30,66,.12)}
+.card.high{border-left-color:#de350b}.card.med{border-left-color:#ff8b00}
+.card.low{border-left-color:#00875a}.card.done{border-left-color:#6554c0}
+.card.blocked{border-left-color:#de350b}
+.card.ready{box-shadow:0 0 0 2px #00875a inset,0 1px 0 rgba(9,30,66,.12)}
+.id{font:600 11px ui-monospace,monospace;color:#5e6c84}
+.badge{font-size:11px;font-weight:700;margin-left:6px}
+.badge.ready{color:#00875a}.badge.blocked{color:#de350b}
+.title{font-weight:600;margin:2px 0}
+.blockedon{font-size:12px;margin-top:4px;color:#5e6c84}
+.blockedon b{display:inline-block;font:600 11px ui-monospace,monospace;
+  background:rgba(222,53,11,.14);color:#de350b;border-radius:4px;padding:0 5px;margin-left:4px}
+summary{color:#0052cc;cursor:pointer;font-size:12px;margin-top:6px}
+pre{white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace;color:#5e6c84;margin:8px 0 0}
+@media(prefers-color-scheme:dark){
+  body{background:#1d2125;color:#c7d1db}header{border-color:#3c4149}
+  .card{background:#282e33;border-color:#3c4149}}
+</style></head><body><header><h1>rash board</h1></header><div class="board"><div class="col"><h2><span>High priority</span><span>0</span></h2></div><div class="col"><h2><span>Medium priority</span><span>4</span></h2><div class="card med ready"><div class="id">M2<span class="badge ready">● ready</span></div><div class="title">Resource limits and timeout (#5)</div><details><summary>details</summary><pre>**Where:** `src/main.c:119-133`.
+
+No limits: a permitted interpreter can fork-bomb or burn CPU and memory, and the parent waits forever. `clone()` is now in place but sets no limits yet.
+
+**Fix:** `setrlimit` in the child before exec (`RLIMIT_NPROC`, `RLIMIT_CPU`, `RLIMIT_AS`) and add a timeout on the wait.
+
+**Note:** H3 is fixed, so a timeout-killed child is reported as `128 + signal`, not success.</pre></details></div><div class="card med blocked"><div class="id">M3<span class="badge blocked">⛔ blocked</span></div><div class="title">Isolation via namespaces and seccomp (#1, #2) — BIG</div><div class="blockedon">blocked on:<b>M2</b></div><details><summary>details</summary><pre>Unsolvable by filtering. **#1:** any interpreter escapes (`bash -c`, `find -exec`, `kubectl` plugins). **#2:** &quot;safe&quot; commands still damage via arguments (`cat ~/.ssh/id_*`, `tee`). You gate the verb, never the object.
+
+**Fix:** contain what the child sees and touches — PID/mount/network namespaces plus a seccomp filter; after M1 and M2.
+
+**Progress:** `clone()` (`src/main.c:119`) passes only `SIGCHLD` — no `CLONE_NEW*` flags, no isolation yet.</pre></details></div><div class="card med ready"><div class="id">M5<span class="badge ready">● ready</span></div><div class="title">Exit codes conflate rash and the child</div><details><summary>details</summary><pre>**Where:** `src/main.c`, all failure paths.
+
+rash&#x27;s own `EXIT_FAILURE` is indistinguishable from a child that legitimately exited 1, so callers cannot tell &quot;rash refused&quot; from &quot;the command failed&quot;. Scripts and agents wrapping rash will misread denials as ordinary errors.
+
+**Fix:** reserve a range for rash&#x27;s own failures, in the 126/127 style, and document the codes.</pre></details></div><div class="card med ready"><div class="id">M10<span class="badge ready">● ready</span></div><div class="title">Env allowlist passes caller-controlled values (was H8)</div><details><summary>details</summary><pre>**Where:** `src/config.c:64-81`.
+
+The allowlist gates variable *names*, then copies their *values* from the caller&#x27;s environment. Harmless today: rash grants no extra privilege and the config lists no loader variables. It becomes code execution inside whitelisted interpreters if someone adds `BASH_ENV`, `PYTHONPATH`, `PERL5LIB`, or `LD_*`.
+
+**Fix:** hard-reject loader and startup variables at parse time, or let the config set fixed values instead of inheriting them.</pre></details></div></div><div class="col"><h2><span>Low priority</span><span>3</span></h2><div class="card low ready"><div class="id">N2<span class="badge ready">● ready</span></div><div class="title">Enforce log dir is root-owned &amp; not group/world-writable (M8 residual; relates to M9)</div></div><div class="card low ready"><div class="id">M6<span class="badge ready">● ready</span></div><div class="title">Doc tripwire: if setuid returns, switch check_user to geteuid/getegid</div><details><summary>details</summary><pre>No current bug — rash isn&#x27;t setuid (07cdea6 backed it off), so getuid/getgid is correct today. This is a reminder to revisit check_user and drop privileges explicitly the moment setuid is reintroduced.</pre></details></div><div class="card low ready"><div class="id">N3<span class="badge ready">● ready</span></div><div class="title">Verify config is root-owned &amp; not group/world-writable at load (fstat the fd)</div><details><summary>details</summary><pre>M9 was fixed operationally (chowned to root:root 644), but rash doesn&#x27;t CHECK this at runtime — it trusts the file&#x27;s ownership. The file was misowned as UID 644 once already, so drift happens; a runtime fstat makes the guarantee durable instead of relying on external state.</pre></details></div></div><div class="col"><h2><span>Done</span><span>14</span></h2><div class="card done"><div class="id">H1</div><div class="title">Non-string whitelist entry → wild pointer: fixed in `ede00ad` (ASan-verified).</div></div><div class="card done"><div class="id">H2</div><div class="title">Heap overflow on long `sysuser`: fixed in `9af433a` (ASan-verified).</div></div><div class="card done"><div class="id">H3</div><div class="title">A killed child reports success: fixed in `9af433a`.</div></div><div class="card done"><div class="id">H5</div><div class="title">Wrong-user denial is never logged: fixed in `9af433a`.</div></div><div class="card done"><div class="id">H6</div><div class="title">Uninitialized struct on parse failure: fixed in `9af433a` (ASan-verified).</div></div><div class="card done"><div class="id">M1</div><div class="title">Resolve the binary before exec (#6)</div><details><summary>details</summary><pre>**Where:** `src/main.c:28-36`, parent guard at `src/main.c:108`.
+
+Absolute-path entries now `execv` the exact file (no search). With `syspath` unset, a parent guard denies any command lacking a leading `/`, so bare names can&#x27;t resolve against the caller&#x27;s cwd. With `syspath` set, `execvp` searches only that trusted, root-owned PATH.
+
+**Nit:** the non-absolute denial hits stderr but isn&#x27;t logged (`goto clear_2` skips `write_log`).</pre></details></div><div class="card done"><div class="id">M7</div><div class="title">`conf.path` is never set</div><details><summary>details</summary><pre>**Where:** `src/config.c:91-101`, used at `src/main.c:28-36`.
+
+`path` is now read from the config&#x27;s `syspath` key and drives the child&#x27;s PATH — or, when unset, selects the absolute-path `execv` mode (M1). No longer an uninitialized pointer, and PATH is config-driven rather than hardcoded.
+
+**Watch:** if `syspath` lists a non-root-owned directory, the `execvp` search there is hijackable — keep it to root-owned dirs.</pre></details></div><div class="card done"><div class="id">L1</div><div class="title">Memory leaks in `free_config`: arrays now freed unconditionally (ASan-verified, no leaks with an empty whitelist and unset env vars).</div></div><div class="card done"><div class="id">L2</div><div class="title">Dead code in `main`: unused `exitcode` and unreachable `retval = EXIT_SUCCESS;` removed; the Makefile now builds with `-Werror`.</div></div><div class="card done"><div class="id">M4</div><div class="title">clone failure only half-reported</div><details><summary>details</summary><pre>**Where:** `src/main.c:121-123`.
+
+`clone()` failure now calls `perror(&quot;rash&quot;)` — good — but still writes no audit-log entry before cleanup. The caller sees a message, yet the log has a gap exactly when the system is under pressure, such as a fork bomb hitting limits.
+
+**Fix:** `write_log` the failure with `errno` alongside the existing `perror`.</pre></details></div><div class="card done"><div class="id">M8</div><div class="title">Audit log still lives in `/tmp` (was H4)</div><details><summary>details</summary><pre>**Where:** `src/main.c:61`, `src/main.c:72-80`.
+
+`O_NOFOLLOW` now blocks symlink redirects, but the log is owned by the restricted user, who can edit or truncate it. With `fs.protected_regular=1`, another user pre-creating `/tmp/rash.log` makes `open` fail and rash refuses to run. Without `O_CLOEXEC`, children inherit a writable log handle.
+
+**Fix:** log under a root-owned directory and open with `O_APPEND | O_CLOEXEC`.</pre></details></div><div class="card done"><div class="id">N1</div><div class="title">Log successful executions (&#x27;ran %s&#x27;) — was unreachable dead code, now reached</div></div><div class="card done"><div class="id">M9</div><div class="title">Config integrity (#4) (was H7)</div><details><summary>details</summary><pre>**Where:** `src/config.c:95`.
+
+Not exploitable today: `hunterkiller` cannot write `/etc/rash/rash.toml` or `/etc/rash`. But the file is owned by nonexistent UID 644, likely a `chown`/`chmod` mix-up, so whoever later gets that UID controls the whitelist. rash never checks ownership before trusting the config.
+
+**Fix:** `sudo chown root:root` the file; refuse to load unless root-owned and not group/world-writable, via `fstat` on the opened fd.</pre></details></div><div class="card done"><div class="id">M11</div><div class="title">Feature macro centralized (-D_GNU_SOURCE in Makefile)</div><details><summary>details</summary><pre>[Deprioritized — Linux/glibc target, not chasing POSIX] **Where:** `src/main.c:1` (`_GNU_SOURCE`); `setenv` at `src/security.c:23`, `src/security.c:29`.
+
+`main.c` defines `_GNU_SOURCE` (needed for `clone`), but `security.c` defines nothing and calls `setenv`, which isn&#x27;t ISO C. Under `gcc -std=c99 -pedantic` it still fails with an implicit `setenv` declaration (confirmed). It only builds because gcc&#x27;s default GNU mode exposes it.
+
+**Fix:** set the feature macro once in the Makefile `OPTIONS` (`-D_GNU_SOURCE`, since `clone` needs it) rather than per-file.</pre></details></div></div></div></body></html>

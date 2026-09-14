@@ -1,5 +1,5 @@
 COMPILER=gcc
-OPTIONS=-o target/rash -Werror -Wextra -Wall
+OPTIONS=-o target/rash -Werror -Wextra -Wall -D_GNU_SOURCE
 COMPILE=$(COMPILER) $(OPTIONS)
 
 build:

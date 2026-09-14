@@ -18,6 +18,7 @@ typedef struct Configuration {
     char **env_values;
 
     char *path;
+    char *logfilepath;
 
     char *sysuser;
 } conf;
